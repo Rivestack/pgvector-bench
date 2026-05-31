@@ -1,0 +1,70 @@
+version: 2
+
+project_name: pgvector-bench
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: pgvector-bench
+    main: ./cmd/pgvector-bench
+    binary: pgvector-bench
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.Version={{.Version}}
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+
+homebrew_casks:
+  - name: pgvector-bench
+    repository:
+      owner: Rivestack
+      name: homebrew-tap
+    homepage: "https://github.com/Rivestack/pgvector-bench"
+    description: "Benchmark your existing pgvector setup — latency, throughput, recall."
+    license: "MIT"
+    binaries:
+      - pgvector-bench
+
+release:
+  github:
+    owner: Rivestack
+    name: pgvector-bench
+  draft: false
+  prerelease: auto

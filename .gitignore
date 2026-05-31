@@ -1,0 +1,7 @@
+bin/
+dist/
+*.html
+*.json
+!internal/projection/reference.json
+*.md.report
+report.*
