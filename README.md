@@ -5,8 +5,8 @@ and **recall** against your own Postgres + pgvector database, with a polished
 animated terminal UI and a self-contained HTML report.
 
 > **Your vectors and connection details never leave your machine.**
-> No telemetry, no signup, no outbound calls — unless you explicitly pass
-> `--share`, which uploads aggregate metrics only.
+> No telemetry, no signup, no outbound calls. The binary opens connections
+> to the Postgres URL you pass — nothing else.
 
 ```
 brew install rivestack/tap/pgvector-bench
@@ -99,7 +99,6 @@ Sample output (real run, US machine against EU DB — high p50 is network RTT):
 | `--report` | none | `json` &#124; `html` &#124; `md` &#124; `both` &#124; `all` |
 | `--out` | auto | Output path prefix for `--report` |
 | `--json` | off | Emit JSON to stdout, suppress TUI |
-| `--share` | off | Upload aggregate metrics, print hosted page URL |
 | `--plain` | auto | Force plain output (auto when stdout is not a TTY) |
 | `--no-color` | off | `NO_COLOR` env honored |
 
@@ -150,15 +149,12 @@ surfaces. Methodology lives at
 
 ## Privacy
 
-- Nothing leaves your machine **unless** you pass `--share`.
-- `--share` posts a single JSON object containing aggregate metrics, the
-  Postgres version, the pgvector version, and the workload shape (dim,
-  rows-bucket, metric, k, index params). It does **not** send the
-  connection string, hostname, table name, column name, or any vector
-  content. The exact payload schema is in `internal/share/share.go`.
-- The reference data used for projections is embedded in the binary, so
-  the projection itself is fully offline.
-- Errors are scrubbed of connection-string content before being printed.
+- The binary opens a Postgres connection to the `--url` you pass. Nothing
+  else egresses, ever. `grep net/http` in the source returns no hits.
+- The reference data used for projections is embedded in the binary, so the
+  projection runs fully offline.
+- Errors are scrubbed of connection strings, hostnames, and IPs before
+  reaching stderr.
 
 ## Exports
 

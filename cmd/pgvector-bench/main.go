@@ -17,7 +17,6 @@ import (
 	"github.com/Rivestack/pgvector-bench/internal/plain"
 	"github.com/Rivestack/pgvector-bench/internal/projection"
 	"github.com/Rivestack/pgvector-bench/internal/report"
-	"github.com/Rivestack/pgvector-bench/internal/share"
 	"github.com/Rivestack/pgvector-bench/internal/tui"
 )
 
@@ -60,7 +59,6 @@ func runCmd() *cobra.Command {
 		reportFmt   string
 		outPath     string
 		jsonOnly    bool
-		shareIt     bool
 		plainOut    bool
 		noColor     bool
 	)
@@ -171,13 +169,6 @@ func runCmd() *cobra.Command {
 				// nothing
 			}
 
-			if shareIt {
-				id, err := share.Submit(ctx, out)
-				if err != nil {
-					return fmt.Errorf("share: %w", err)
-				}
-				fmt.Fprintf(os.Stdout, "\n→ Hosted result: https://rivestack.io/r/%s\n", id)
-			}
 			return nil
 		},
 	}
@@ -196,7 +187,6 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringVar(&reportFmt, "report", "", "Report format: json | html | md | both | all")
 	cmd.Flags().StringVar(&outPath, "out", "", "Output path prefix for --report")
 	cmd.Flags().BoolVar(&jsonOnly, "json", false, "Emit JSON to stdout, suppress TUI")
-	cmd.Flags().BoolVar(&shareIt, "share", false, "Upload aggregate metrics, print hosted page URL")
 	cmd.Flags().BoolVar(&plainOut, "plain", false, "Force plain output (auto when stdout is not a TTY)")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output (NO_COLOR env honored)")
 
