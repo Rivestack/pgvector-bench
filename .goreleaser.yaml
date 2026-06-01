@@ -51,16 +51,19 @@ changelog:
       - "^test:"
       - "^ci:"
 
-homebrew_casks:
-  - name: pgvector-bench
-    repository:
-      owner: Rivestack
-      name: homebrew-tap
-    homepage: "https://github.com/Rivestack/pgvector-bench"
-    description: "Benchmark your existing pgvector setup — latency, throughput, recall."
-    license: "MIT"
-    binaries:
-      - pgvector-bench
+# Homebrew cask publishing is wired up but disabled until the
+# Rivestack/homebrew-tap repository exists. Uncomment to enable:
+#
+# homebrew_casks:
+#   - name: pgvector-bench
+#     repository:
+#       owner: Rivestack
+#       name: homebrew-tap
+#     homepage: "https://github.com/Rivestack/pgvector-bench"
+#     description: "Benchmark your existing pgvector setup — latency, throughput, recall."
+#     license: "MIT"
+#     binaries:
+#       - pgvector-bench
 
 release:
   github:
