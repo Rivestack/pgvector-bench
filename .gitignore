@@ -1,7 +1,8 @@
 bin/
 dist/
-*.html
-*.json
-!internal/projection/reference.json
-*.md.report
-report.*
+# Generated benchmark reports
+/report.*
+/pgvector-bench-report.*
+/*.html
+/*.json
+/*.md.report
