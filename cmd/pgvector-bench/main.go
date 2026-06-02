@@ -33,12 +33,21 @@ func main() {
 }
 
 func rootCmd() *cobra.Command {
+	rc := runCmd()
 	root := &cobra.Command{
-		Use:     "pgvector-bench",
-		Short:   "Benchmark your existing pgvector setup. Your vectors and connection details never leave your machine.",
-		Version: Version,
+		Use:           "pgvector-bench",
+		Short:         "Benchmark your existing pgvector setup. Your vectors and connection details never leave your machine.",
+		Version:       Version,
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		// Bare `pgvector-bench` (no subcommand) → delegate to `run`, so the
+		// wizard kicks in at an interactive terminal. Scripted users keep
+		// using `pgvector-bench run --url ...`.
+		RunE: rc.RunE,
 	}
-	root.AddCommand(runCmd())
+	// Mirror the run flags on the root so `pgvector-bench --url ...` also works.
+	root.Flags().AddFlagSet(rc.Flags())
+	root.AddCommand(rc)
 	return root
 }
 
@@ -69,6 +78,13 @@ func runCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// PGVB_URL is an alternative to --url for users whose shell mangles
+			// the connection string (zsh expands "?" in URLs, breaking pasted
+			// connection strings unless they're quoted).
+			if url == "" {
+				url = os.Getenv("PGVB_URL")
+			}
+
 			cfg := &engine.Config{
 				URL: url, Table: table, Column: column,
 				Metric:        engine.Metric(metric),
@@ -83,10 +99,21 @@ func runCmd() *cobra.Command {
 			}
 
 			// Auto-detect plain mode.
+			ttyIn := term.IsTerminal(int(os.Stdin.Fd()))
 			ttyOut := term.IsTerminal(int(os.Stdout.Fd()))
 			useTUI := !plainOut && !jsonOnly && ttyOut
 			if os.Getenv("NO_COLOR") != "" {
 				noColor = true
+			}
+
+			// If the user didn't pass --url and they're at an interactive
+			// terminal, run the wizard. This sidesteps the zsh-glob-expansion
+			// problem with "?sslmode=…" because the URL is typed into a prompt
+			// rather than a shell argument.
+			if cfg.URL == "" && ttyIn && ttyOut && !jsonOnly {
+				if err := runWizard(cfg); err != nil {
+					return err
+				}
 			}
 
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -172,7 +199,7 @@ func runCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&url, "url", "", "Postgres connection string")
+	cmd.Flags().StringVar(&url, "url", "", "Postgres connection string (also reads PGVB_URL env)")
 	cmd.Flags().StringVar(&table, "table", "", "Target table (schema.table or table)")
 	cmd.Flags().StringVar(&column, "column", "", "Vector column name")
 	cmd.Flags().StringVar(&metric, "metric", "cosine", "Distance metric: cosine | l2 | ip")
@@ -190,7 +217,6 @@ func runCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&plainOut, "plain", false, "Force plain output (auto when stdout is not a TTY)")
 	cmd.Flags().BoolVar(&noColor, "no-color", false, "Disable color output (NO_COLOR env honored)")
 
-	cmd.MarkFlagRequired("url")
 	return cmd
 }
 

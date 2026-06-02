@@ -18,24 +18,43 @@ go install github.com/Rivestack/pgvector-bench/cmd/pgvector-bench@latest
 
 ## Quickstart
 
+The easy path — just run it:
+
+```bash
+pgvector-bench
+```
+
+An interactive wizard asks for your connection string, table/column (or synthetic),
+metric, and customizes from there. No flags to memorize and no shell-quoting traps
+for connection strings.
+
+The flag-driven path, for scripting:
+
 ```bash
 # Benchmark an existing table
 pgvector-bench run \
-  --url postgres://user:pass@host:5432/db \
+  --url 'postgres://user:pass@host:5432/db?sslmode=require' \
   --table documents --column embedding --metric cosine
 
+# Or pass the URL via env (avoids shell quoting altogether)
+PGVB_URL='postgres://...' pgvector-bench run --table documents --column embedding
+
 # No data yet? Generate a synthetic dataset on the target DB
-pgvector-bench run \
-  --url postgres://... \
-  --synthetic --rows 100000 --dim 1536
+pgvector-bench run --url '...' --synthetic --rows 100000 --dim 1536
 
 # Sweep ef_search to see the recall/latency tradeoff
-pgvector-bench run --url ... --table documents --column embedding \
+pgvector-bench run --url '...' --table documents --column embedding \
   --ef-search 40,100,200
 
 # Headless: JSON to stdout
-pgvector-bench run --url ... --table documents --column embedding --json
+pgvector-bench run --url '...' --table documents --column embedding --json
 ```
+
+> **zsh tip.** Always quote connection strings with `'single quotes'`. zsh
+> treats `?` as a glob and rejects an unquoted `?sslmode=require` with
+> `zsh: no matches found`. Bash isn't bothered. The wizard skips this whole
+> class of problem because you type the URL into a prompt, not a shell
+> argument.
 
 ## What it measures
 
