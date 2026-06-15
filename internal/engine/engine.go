@@ -101,7 +101,7 @@ func Run(parent context.Context, cfg *Config, version string, emit func(Event)) 
 	if cfg.RecallSample > totalNeeded {
 		totalNeeded = cfg.RecallSample
 	}
-	queries, err := sampleQueryVectors(ctx, pool, env, totalNeeded)
+	queries, selfIDs, err := sampleQueryVectors(ctx, pool, env, totalNeeded)
 	if err != nil {
 		return nil, err
 	}
@@ -128,10 +128,12 @@ func Run(parent context.Context, cfg *Config, version string, emit func(Event)) 
 
 	// Recall (+ ef_search sweep).
 	recallQ := queries
+	recallIDs := selfIDs
 	if len(recallQ) > cfg.RecallSample {
 		recallQ = recallQ[:cfg.RecallSample]
+		recallIDs = recallIDs[:cfg.RecallSample]
 	}
-	rec, err := runRecall(ctx, pool, env, cfg, recallQ, emit)
+	rec, err := runRecall(ctx, pool, env, cfg, recallQ, recallIDs, emit)
 	if err != nil {
 		return nil, err
 	}

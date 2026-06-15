@@ -26,6 +26,7 @@ func runRecall(
 	env *Env,
 	cfg *Config,
 	queries [][]float32,
+	selfIDs []string,
 	emit func(Event),
 ) (RecallResult, error) {
 	if env.IndexType != "hnsw" && env.IndexType != "ivfflat" {
@@ -44,10 +45,15 @@ func runRecall(
 
 	// Determine row identity: prefer ctid (always unique, no schema assumptions).
 	idExpr := "ctid"
+	// Fetch k+1: query vectors are sampled from the table, so the row itself is
+	// the distance-0 nearest neighbour. We drop that self-match (by ctid) from
+	// both the index result and the ground truth so recall@k measures the k real
+	// neighbours, not a guaranteed free hit.
+	fetchK := cfg.K + 1
 	annSQL := fmt.Sprintf("SELECT %s::text FROM %s ORDER BY %s %s $1::vector LIMIT %d",
-		idExpr, tbl, col, op, cfg.K)
+		idExpr, tbl, col, op, fetchK)
 	exactSQL := fmt.Sprintf("SELECT %s::text FROM %s ORDER BY %s %s $1::vector LIMIT %d",
-		idExpr, tbl, col, op, cfg.K)
+		idExpr, tbl, col, op, fetchK)
 
 	// Compute ground truth once per query.
 	groundTruth := make([][]string, len(queries))
@@ -93,7 +99,7 @@ func runRecall(
 				conn.Release()
 				return RecallResult{}, err
 			}
-			groundTruth[i] = ids
+			groundTruth[i] = dropSelf(ids, selfIDs[i], cfg.K)
 			if i%10 == 0 || i == len(queries)-1 {
 				emit(Progress{Phase: PhaseRecall, Done: i + 1, Total: len(queries),
 					ExtraLabel: "ground truth"})
@@ -113,7 +119,7 @@ func runRecall(
 		if ctx.Err() != nil {
 			return out, ctx.Err()
 		}
-		pt, err := measureRecallAt(ctx, pool, env, annSQL, queries, groundTruth, ef, emit)
+		pt, err := measureRecallAt(ctx, pool, env, cfg, annSQL, queries, selfIDs, groundTruth, ef, emit)
 		if err != nil {
 			return out, err
 		}
@@ -138,8 +144,10 @@ func measureRecallAt(
 	ctx context.Context,
 	pool *pgxpool.Pool,
 	env *Env,
+	cfg *Config,
 	annSQL string,
 	queries [][]float32,
+	selfIDs []string,
 	groundTruth [][]string,
 	efSearch int,
 	emit func(Event),
@@ -150,8 +158,17 @@ func measureRecallAt(
 	}
 	defer conn.Release()
 
+	// Wrap the whole level in one transaction and use SET LOCAL so ef_search is
+	// honoured even when the target is reached through a transaction pooler
+	// (e.g. PgBouncer/Supabase pooler), where a session-level SET on autocommit
+	// queries can land on a different backend and be silently ignored.
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return RecallPoint{}, scrub(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck — read-only; rollback is the cleanup
 	if efSearch > 0 && env.IndexType == "hnsw" {
-		if _, err := conn.Exec(ctx, fmt.Sprintf("SET hnsw.ef_search = %d", efSearch)); err != nil {
+		if _, err := tx.Exec(ctx, fmt.Sprintf("SET LOCAL hnsw.ef_search = %d", efSearch)); err != nil {
 			return RecallPoint{}, scrub(err)
 		}
 	}
@@ -164,19 +181,16 @@ func measureRecallAt(
 			return RecallPoint{}, ctx.Err()
 		}
 		t0 := time.Now()
-		ids, err := scanIDsConn(ctx, conn, annSQL, q)
+		ids, err := scanIDs(ctx, tx, annSQL, q)
 		if err != nil {
 			return RecallPoint{}, err
 		}
 		durs = append(durs, float64(time.Since(t0).Microseconds())/1000.0)
-		hits += jaccardIntersection(ids, groundTruth[i])
+		hits += jaccardIntersection(dropSelf(ids, selfIDs[i], cfg.K), groundTruth[i])
 		if i%10 == 0 || i == len(queries)-1 {
 			emit(Progress{Phase: PhaseRecall, Done: i + 1, Total: len(queries),
 				ExtraLabel: fmt.Sprintf("ef_search=%d", efSearch)})
 		}
-	}
-	if env.IndexType == "hnsw" {
-		_, _ = conn.Exec(ctx, "RESET hnsw.ef_search")
 	}
 	wall := time.Since(t0Wall).Seconds()
 	sort.Float64s(durs)
@@ -186,6 +200,24 @@ func measureRecallAt(
 		P95Ms:    pct(durs, 95),
 		QPS:      float64(len(queries)) / wall,
 	}, nil
+}
+
+// dropSelf removes the query row's own ctid (the distance-0 self-match) from a
+// neighbour list and trims it to k, so recall measures the k real neighbours.
+func dropSelf(ids []string, self string, k int) []string {
+	out := make([]string, 0, len(ids))
+	removed := false
+	for _, id := range ids {
+		if !removed && id == self {
+			removed = true
+			continue
+		}
+		out = append(out, id)
+	}
+	if len(out) > k {
+		out = out[:k]
+	}
+	return out
 }
 
 // jaccardIntersection returns |a ∩ b| / |b| — the per-query recall ratio.
@@ -225,10 +257,6 @@ func scanIDs(ctx context.Context, c conniface, sql string, v []float32) ([]strin
 		ids = append(ids, s)
 	}
 	return ids, rows.Err()
-}
-
-func scanIDsConn(ctx context.Context, conn *pgxpool.Conn, sql string, v []float32) ([]string, error) {
-	return scanIDs(ctx, conn.Conn(), sql, v)
 }
 
 func verifySeqScan(ctx context.Context, tx pgx.Tx, sql string, v []float32) (bool, string) {
